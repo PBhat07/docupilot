@@ -1,0 +1,30 @@
+
+# Private personal learning notes
+/my_notes.txt
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local data and downloaded models
+/data/
+/models/
+/artifacts/
+
+# OS files
+.DS_Store
+Thumbs.db

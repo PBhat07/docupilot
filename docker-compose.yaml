@@ -1,0 +1,48 @@
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docupilot-api
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./src:/app/src
+    command:
+      - uvicorn
+      - docupilot.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:8.0
+    container_name: docupilot-mongodb
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.29.1
+    container_name: docupilot-weaviate
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:50051:50051"
+    environment:
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "node1"
+      QUERY_DEFAULTS_LIMIT: "25"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+
+volumes:
+  mongodb_data:
+  weaviate_data:
