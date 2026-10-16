@@ -43,7 +43,6 @@ PAGES = {
               <h1>Guide</h1>
               <p>Follow these steps to install the package.</p>
               <pre><code>pip install example-package</code></pre>
-              <p>Versioning test: this sentence was added for the next crawl.</p>
               <a href="/deep/page.html">Deep page</a>
             </main>
           </body>
