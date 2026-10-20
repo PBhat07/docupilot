@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from typing import Any
 
 import httpx
@@ -149,42 +150,87 @@ def check_job(client: httpx.Client) -> None:
         print_json(result)
 
 
+
 def ask_question(client: httpx.Client) -> None:
-    question = input("Question: ").strip()
-    if not question:
-        print("Question cannot be empty.")
-        return
+    """Run a multi-turn conversation until the user exits to the menu."""
+    conversation_id = None
 
-    result = request_api(
-        client,
-        "POST",
-        "/questions",
-        json={"question": question},
-    )
-    if result is None:
-        return
+    print("Chat started. Type /new for a new conversation or /menu to exit.")
 
-    # Display answer-oriented fields first when available.
-    if isinstance(result, dict):
+    while True:
+        try:
+            question = input("\nYou: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nReturning to the main menu.")
+            return
+
+        if not question:
+            continue
+
+        if question.lower() in {"/menu", "/exit"}:
+            print("Returning to the main menu.")
+            return
+
+        if question.lower() == "/new":
+            conversation_id = None
+            print("Started a new conversation.")
+            continue
+
+        payload = {"question": question}
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
+
+        result = request_api(
+            client,
+            "POST",
+            "/questions",
+            json=payload,
+        )
+
+        if not isinstance(result, dict):
+            continue
+
+        # Reuse the ID returned by the API on subsequent turns.
+        returned_id = result.get("conversation_id")
+        if returned_id:
+            conversation_id = returned_id
+
         answer = result.get("answer")
-        if answer is not None:
-            print("\nAnswer\n------")
-            print(answer)
+        if answer:
+            print(f"\nDocuPilot:\n{answer}")
 
-        citations = result.get("citations")
-        if citations is not None:
-            print("\nCitations\n---------")
-            print_json(citations)
+        citations = result.get("citations", [])
+        if citations:
+            print("\nSources:")
+            for citation in citations:
+                print(
+                    f"- [{citation.get('ref', '?')}] "
+                    f"{citation.get('title', 'Untitled')}"
+                )
+                if citation.get("url"):
+                    print(f"  {citation['url']}")
 
-        if result.get("abstained") is True:
-            print("\nDocuPilot abstained from answering.")
-            reason = result.get("reason")
-            if reason:
-                print(f"Reason: {reason}")
+        if result.get("abstained"):
+            print("\nDocuPilot could not verify a reliable answer.")
 
-        print("\nFull response")
-        print("-------------")
-    print_json(result)
+        # Display other retrieved pages for further investigation.
+        sources = result.get("sources", [])
+        cited_urls = {
+            item.get("url") for item in citations if item.get("url")
+        }
+        related = [
+            source for source in sources
+            if source.get("url") and source["url"] not in cited_urls
+        ]
+
+        if related:
+            print("\nRelated documentation:")
+            for source in related:
+                print(
+                    f"- {source.get('title', 'Documentation')}: "
+                    f"{source['url']}"
+                )
+
 
 
 def main() -> None:

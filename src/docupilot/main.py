@@ -51,6 +51,7 @@ ACTIVE_SOURCE_STATUSES = {"queued", "running"}
 class QuestionRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     source_ids: list[str] | None = None
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=128)
 
     @field_validator("question")
     @classmethod
@@ -162,7 +163,7 @@ def build_answer_service() -> tuple[AnswerService, Any, MongoClient]:
             reranker=Reranker(device="cpu"),
             rerank_enabled=True,
             candidate_limit=20,
-            final_limit=3,
+            final_limit=6,
             alpha=0.5,
         )
 
@@ -596,10 +597,37 @@ async def ask_question(
         )
 
     try:
-        return await service.answer(
+        database = get_database(request)
+        conversation_id = payload.conversation_id or uuid.uuid4().hex
+        conversation = database.conversations.find_one(
+            {"_id": conversation_id}, {"turns": {"$slice": -8}}
+        )
+        history = conversation.get("turns", []) if conversation else []
+
+        result = await service.answer(
             payload.question,
             source_ids=payload.source_ids,
+            conversation_history=history,
         )
+        result["conversation_id"] = conversation_id
+
+        turn = {
+            "question": payload.question,
+            "answer": result.get("answer", ""),
+            "citations": result.get("citations", []),
+            "abstained": result.get("abstained", False),
+            "created_at": utc_now(),
+        }
+        database.conversations.update_one(
+            {"_id": conversation_id},
+            {
+                "$set": {"updated_at": utc_now()},
+                "$setOnInsert": {"created_at": utc_now()},
+                "$push": {"turns": {"$each": [turn], "$slice": -12}},
+            },
+            upsert=True,
+        )
+        return result
 
     except LLMRateLimitError as exc:
         logger.warning("LLM provider rate limit reached.")
