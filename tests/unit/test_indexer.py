@@ -1,12 +1,15 @@
 
+
 from unittest.mock import MagicMock
 
 import pytest
 
+from docupilot.indexing.chunker import DEFAULT_MAX_TOKENS, chunk_page
 from docupilot.indexing.indexer import Indexer
 
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_MAX_SEQ_LENGTH = 256
 
 
 @pytest.fixture
@@ -28,6 +31,10 @@ def setup_indexer(page):
 
     embedder = MagicMock()
     embedder.model_name = MODEL_NAME
+    embedder.model.max_seq_length = MODEL_MAX_SEQ_LENGTH
+    embedder.count_tokens.side_effect = (
+        lambda text: len(text.split()) + 2
+    )
     embedder.embed_texts.return_value = [[0.1] * 384]
 
     store = MagicMock()
@@ -35,13 +42,23 @@ def setup_indexer(page):
     store.upsert_chunks.return_value = 1
     store.delete_page_chunks_except.return_value = 0
 
-    indexer = Indexer(
-        db=db,
-        embedder=embedder,
-        store=store,
-    )
+    indexer = Indexer(db=db, embedder=embedder, store=store)
 
     return indexer, db, embedder, store, page
+
+
+def _make_indexer_chunks(page, embedder):
+    """Generate chunks using the same configuration as Indexer."""
+    token_budget = min(
+        DEFAULT_MAX_TOKENS,
+        embedder.model.max_seq_length - 1,
+    )
+
+    return chunk_page(
+        page,
+        token_counter=embedder.count_tokens,
+        max_tokens=token_budget,
+    )
 
 
 def test_indexes_new_page(setup_indexer):
@@ -62,10 +79,8 @@ def test_indexes_new_page(setup_indexer):
 def test_skips_page_when_already_current(setup_indexer):
     indexer, _, embedder, store, page = setup_indexer
 
-    # Simulate the same chunk already existing in Weaviate.
-    from docupilot.indexing.chunker import chunk_page
-
-    existing_chunks = chunk_page(page)
+    # Simulate chunks already indexed with the current configuration.
+    existing_chunks = _make_indexer_chunks(page, embedder)
     existing_chunks[0]["embedding_model"] = MODEL_NAME
     store.get_page_chunks.return_value = existing_chunks
 
@@ -75,6 +90,7 @@ def test_skips_page_when_already_current(setup_indexer):
     store.upsert_chunks.assert_not_called()
     store.delete_page_chunks_except.assert_not_called()
 
+    assert stats["pages_seen"] == 1
     assert stats["pages_skipped"] == 1
     assert stats["pages_indexed"] == 0
 
@@ -82,8 +98,8 @@ def test_skips_page_when_already_current(setup_indexer):
 def test_changed_content_is_reindexed(setup_indexer):
     indexer, _, embedder, store, page = setup_indexer
 
-    # Existing chunk has a different content hash.
-    old_chunks = [
+    # Simulate a previously indexed version of the page.
+    store.get_page_chunks.return_value = [
         {
             "chunk_id": "old-chunk",
             "source_id": page["source_id"],
@@ -96,10 +112,10 @@ def test_changed_content_is_reindexed(setup_indexer):
             "chunker_version": "1",
             "chunk_size": 800,
             "chunk_overlap": 120,
+            "max_tokens": None,
             "embedding_model": MODEL_NAME,
         }
     ]
-    store.get_page_chunks.return_value = old_chunks
 
     stats = indexer.index_pages()
 
@@ -108,6 +124,7 @@ def test_changed_content_is_reindexed(setup_indexer):
     store.delete_page_chunks_except.assert_called_once()
 
     assert stats["pages_indexed"] == 1
+    assert stats["pages_skipped"] == 0
 
 
 def test_embedding_failure_does_not_delete_existing_chunks(setup_indexer):
@@ -160,8 +177,11 @@ def test_multiple_pages_are_processed(setup_indexer):
 
     assert stats["pages_seen"] == 2
     assert stats["pages_indexed"] == 2
+    assert stats["pages_skipped"] == 0
     assert embedder.embed_texts.call_count == 2
     assert store.upsert_chunks.call_count == 2
+    assert store.delete_page_chunks_except.call_count == 2
+
 
 
 

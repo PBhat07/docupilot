@@ -11,7 +11,7 @@ COPY src/ ./src/
 COPY tests/ ./tests/
 COPY scripts/ ./scripts/
 
-RUN pip install --no-cache-dir -e ".[dev]"
+RUN pip install --no-cache-dir --default-timeout=300 --retries=5 -e ".[dev]"
 
 EXPOSE 8000
 

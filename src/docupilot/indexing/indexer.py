@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from docupilot.indexing.chunker import chunk_page
+from docupilot.indexing.chunker import (
+    DEFAULT_MAX_TOKENS,
+    chunk_page,
+)
 from docupilot.indexing.embedder import Embedder
 from docupilot.indexing.weaviate_store import WeaviateStore
 
@@ -52,6 +55,7 @@ class Indexer:
             "chunker_version",
             "chunk_size",
             "chunk_overlap",
+            "max_tokens",
         )
 
         for chunk_id, expected in expected_by_id.items():
@@ -66,8 +70,14 @@ class Indexer:
 
         return True
 
-    def index_pages(self) -> dict[str, int]:
-        """Index current pages and clean up stale chunks after successful writes."""
+    def index_pages(
+        self,
+        source_id: str | None = None,
+    ) -> dict[str, int]:
+        """Index current pages, optionally restricted to one source."""
+        if source_id is not None and not source_id.strip():
+            raise ValueError("source_id must not be empty")
+
         stats = {
             "pages_seen": 0,
             "pages_indexed": 0,
@@ -77,26 +87,38 @@ class Indexer:
             "empty_pages_skipped": 0,
         }
 
-        pages = self.db.pages.find(
-            {"text": {"$type": "string"}}
-        )
+        query: dict[str, Any] = {
+            "text": {"$type": "string"},
+        }
+
+        if source_id is not None:
+            query["source_id"] = source_id
+
+        pages = self.db.pages.find(query)
+
+        # Keep chunks within the embedding model's token limit.
+        model_limit = self.embedder.model.max_seq_length
+        token_budget = min(DEFAULT_MAX_TOKENS, model_limit - 1)
 
         for page in pages:
             stats["pages_seen"] += 1
 
-            chunks = chunk_page(page)
+            chunks = chunk_page(
+                page,
+                token_counter=self.embedder.count_tokens,
+                max_tokens=token_budget,
+            )
 
-            # Empty extraction may indicate a crawler or parser problem.
-            # Preserve any previously indexed content in that case.
+            # Preserve existing indexed content if extraction is empty.
             if not chunks:
                 stats["empty_pages_skipped"] += 1
                 continue
 
-            source_id = page["source_id"]
+            page_source_id = page["source_id"]
             canonical_url = page["canonical_url"]
 
             existing = self.store.get_page_chunks(
-                source_id=source_id,
+                source_id=page_source_id,
                 canonical_url=canonical_url,
             )
 
@@ -108,12 +130,11 @@ class Indexer:
                 stats["pages_skipped"] += 1
                 continue
 
-            # Generate every vector before modifying the existing index.
+            # Generate every vector before modifying existing chunks.
             vectors = self.embedder.embed_texts(
                 [chunk["chunk_text"] for chunk in chunks]
             )
 
-            # Write the new/current chunks before removing old ones.
             written = self.store.upsert_chunks(
                 chunks,
                 vectors,
@@ -121,11 +142,11 @@ class Indexer:
             )
             stats["chunks_written"] += written
 
-            # Remove obsolete chunks only after all upserts return successfully.
+            # Delete obsolete chunks only after successful upserts.
             keep_ids = {chunk["chunk_id"] for chunk in chunks}
 
             deleted = self.store.delete_page_chunks_except(
-                source_id=source_id,
+                source_id=page_source_id,
                 canonical_url=canonical_url,
                 keep_chunk_ids=keep_ids,
             )

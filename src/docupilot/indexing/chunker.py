@@ -4,12 +4,15 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 
-CHUNKER_VERSION = "1"
+CHUNKER_VERSION = "2"
+
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 120
+DEFAULT_MAX_TOKENS = 240
 
 
 def _stable_chunk_id(
@@ -20,8 +23,9 @@ def _stable_chunk_id(
     chunk_index: int,
     chunk_size: int,
     chunk_overlap: int,
+    max_tokens: int | None,
 ) -> str:
-    """Create a deterministic ID for a chunk and its indexing configuration."""
+    """Create a deterministic ID for a chunk and its configuration."""
     identity = {
         "source_id": source_id,
         "canonical_url": canonical_url,
@@ -29,6 +33,7 @@ def _stable_chunk_id(
         "chunk_index": chunk_index,
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
+        "max_tokens": max_tokens,
         "chunker_version": CHUNKER_VERSION,
     }
 
@@ -59,7 +64,7 @@ def _find_chunk_end(
     max_end: int,
     min_end: int,
 ) -> int:
-    """Prefer a newline or word boundary near the target chunk size."""
+    """Prefer a newline or word boundary near the target size."""
     if max_end >= len(text):
         return len(text)
 
@@ -71,7 +76,7 @@ def _find_chunk_end(
     if space >= min_end:
         return space
 
-    # A single unbroken string may not contain a usable boundary.
+    # Fall back to the character limit for unbroken strings.
     return max_end
 
 
@@ -79,10 +84,21 @@ def _split_text(
     text: str,
     chunk_size: int,
     chunk_overlap: int,
+    *,
+    token_counter: Callable[[str], int] | None = None,
+    max_tokens: int | None = None,
 ) -> list[str]:
-    """Split text into bounded, overlapping character windows."""
+    """Split text into overlapping chunks within optional token limits."""
     if not text:
         return []
+
+    if (token_counter is None) != (max_tokens is None):
+        raise ValueError(
+            "token_counter and max_tokens must be provided together"
+        )
+
+    if max_tokens is not None and max_tokens < 1:
+        raise ValueError("max_tokens must be at least 1")
 
     chunks: list[str] = []
     start = 0
@@ -96,8 +112,59 @@ def _split_text(
             max_end,
         )
 
-        end = _find_chunk_end(text, start, max_end, min_end)
-        chunk = text[start:end].strip()
+        end = _find_chunk_end(
+            text,
+            start,
+            max_end,
+            min_end,
+        )
+
+        # Reduce oversized windows until the actual tokenizer
+        # confirms that the chunk fits within the token budget.
+        if token_counter is not None and max_tokens is not None:
+            while end > start:
+                candidate = text[start:end].strip()
+
+                if token_counter(candidate) <= max_tokens:
+                    break
+
+                reduced_end = start + max(
+                    1,
+                    int((end - start) * 0.8),
+                )
+
+                reduced_min = min(
+                    start + max(
+                        1,
+                        int((reduced_end - start) * 0.6),
+                    ),
+                    reduced_end,
+                )
+
+                end = _find_chunk_end(
+                    text,
+                    start,
+                    reduced_end,
+                    reduced_min,
+                )
+
+            chunk = text[start:end].strip()
+
+            if not chunk:
+                raise ValueError(
+                    "Unable to produce a non-empty chunk "
+                    "within the configured token budget"
+                )
+
+            if token_counter(chunk) > max_tokens:
+                # Even one character may exceed a custom tokenizer's
+                # budget. Do not silently truncate or emit invalid data.
+                raise ValueError(
+                    "Unable to split text within the configured "
+                    "token budget"
+                )
+        else:
+            chunk = text[start:end].strip()
 
         if chunk:
             chunks.append(chunk)
@@ -136,11 +203,24 @@ def chunk_page(
     *,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    token_counter: Callable[[str], int] | None = None,
+    max_tokens: int | None = None,
 ) -> list[dict[str, Any]]:
     """Convert a stored documentation page into metadata-rich chunks.
 
-    The page must contain source_id, canonical_url, content_hash and text.
-    Empty pages return no chunks.
+    Required fields:
+        source_id, canonical_url, content_hash, text
+
+    Args:
+        page: Stored documentation page.
+        chunk_size: Maximum character window before token-aware splitting.
+        chunk_overlap: Character overlap between successive chunks.
+        token_counter: Optional tokenizer-backed token-counting function.
+        max_tokens: Maximum allowed tokens per chunk, including special
+            tokens when the supplied counter includes them.
+
+    Empty pages return no chunks. Token-aware splitting is enabled when
+    both token_counter and max_tokens are provided.
     """
     if chunk_size < 1:
         raise ValueError("chunk_size must be at least 1")
@@ -149,7 +229,17 @@ def chunk_page(
         raise ValueError("chunk_overlap cannot be negative")
 
     if chunk_overlap >= chunk_size:
-        raise ValueError("chunk_overlap must be smaller than chunk_size")
+        raise ValueError(
+            "chunk_overlap must be smaller than chunk_size"
+        )
+
+    if (token_counter is None) != (max_tokens is None):
+        raise ValueError(
+            "token_counter and max_tokens must be provided together"
+        )
+
+    if max_tokens is not None and max_tokens < 1:
+        raise ValueError("max_tokens must be at least 1")
 
     required_fields = (
         "source_id",
@@ -161,12 +251,14 @@ def chunk_page(
         value = page.get(field)
 
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"Page requires a non-empty {field}")
-        
+            raise ValueError(
+                f"Page requires a non-empty {field}"
+            )
+
     text_value = page.get("text")
 
     if not isinstance(text_value, str):
-        raise ValueError("Page requires text as a string")     
+        raise ValueError("Page requires text as a string")
 
     text = _normalize_text(text_value)
 
@@ -177,9 +269,11 @@ def chunk_page(
         text,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
+        token_counter=token_counter,
+        max_tokens=max_tokens,
     )
 
-    chunks = []
+    chunks: list[dict[str, Any]] = []
 
     for index, chunk_text in enumerate(raw_chunks):
         chunk_id = _stable_chunk_id(
@@ -189,6 +283,7 @@ def chunk_page(
             chunk_index=index,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            max_tokens=max_tokens,
         )
 
         chunks.append(
@@ -204,6 +299,7 @@ def chunk_page(
                 "chunker_version": CHUNKER_VERSION,
                 "chunk_size": chunk_size,
                 "chunk_overlap": chunk_overlap,
+                "max_tokens": max_tokens,
             }
         )
 

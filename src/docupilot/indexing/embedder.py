@@ -93,3 +93,12 @@ class Embedder:
             raise RuntimeError("Embeddings contain non-finite values")
 
         return embeddings.tolist()
+    def count_tokens(self, text: str) -> int:
+        """Count tokens including special tokens, without truncation."""
+        return len(
+            self.model.tokenizer.encode(
+                text,
+                add_special_tokens=True,
+                truncation=False,
+            )
+        )

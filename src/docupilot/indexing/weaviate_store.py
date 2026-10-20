@@ -9,6 +9,7 @@ from weaviate.classes.config import Configure, DataType, Property
 from weaviate.classes.query import MetadataQuery
 from weaviate.classes.query import Filter
 
+
 COLLECTION_NAME = "DocuPilotChunks"
 EXPECTED_DIMENSION = 384
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -174,6 +175,7 @@ class WeaviateStore:
         query_vector: Sequence[float],
         limit: int = 20,
         alpha: float = 0.5,
+        source_ids: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve chunks using combined BM25 and vector search.
 
@@ -189,16 +191,51 @@ class WeaviateStore:
 
         if not 0.0 <= alpha <= 1.0:
             raise ValueError("alpha must be between 0.0 and 1.0")
+        
+        if source_ids is not None:
+            if (
+                isinstance(source_ids, (str, bytes))
+                or not isinstance(source_ids, Sequence)
+                or not source_ids
+            ):
+                raise ValueError(
+                    "source_ids must be a non-empty sequence of source IDs"
+                )
+
+            if any(
+                not isinstance(source_id, str) or not source_id.strip()
+                for source_id in source_ids
+            ):
+                raise ValueError(
+                    "source_ids must contain non-empty strings"
+                )
+
+            source_ids = list(
+                dict.fromkeys(source_id.strip() for source_id in source_ids)
+            )
 
         vector = self._validate_vector(query_vector)
 
-        response = self.collection.query.hybrid(
-            query=query_text.strip(),
-            vector=vector,
-            alpha=alpha,
-            limit=limit,
-            return_metadata=MetadataQuery(score=True, explain_score=True),
-        )
+        search_kwargs: dict[str, Any] = {
+            "query": query_text.strip(),
+            "vector": vector,
+            "alpha": alpha,
+            "limit": limit,
+            "return_metadata": MetadataQuery(
+                score=True,
+                explain_score=True,
+            ),
+        }
+
+        if source_ids is not None:
+            search_kwargs["filters"] = Filter.any_of(
+                [
+                    Filter.by_property("source_id").equal(source_id)
+                    for source_id in source_ids
+                ]
+            )
+
+        response = self.collection.query.hybrid(**search_kwargs)
 
         return [
             {

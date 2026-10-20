@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from docupilot.retrieval.pipeline import RetrievalPipeline
-
+from docupilot.retrieval.version_filter import CurrentVersionFilter
 
 @pytest.fixture
 def dependencies():
@@ -34,15 +34,19 @@ def dependencies():
         }
     ]
 
-    return embedder, store, reranker
+    version_filter = MagicMock(spec=CurrentVersionFilter)
+    version_filter.filter_current.side_effect = lambda candidates: candidates
+
+    return embedder, store, reranker, version_filter
 
 
 def test_pipeline_returns_reranked_chunks(dependencies):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
 
     pipeline = RetrievalPipeline(
         embedder=embedder,
         store=store,
+        version_filter=version_filter,
         reranker=reranker,
         rerank_enabled=True,
         candidate_limit=20,
@@ -65,16 +69,18 @@ def test_pipeline_returns_reranked_chunks(dependencies):
         query_vector=[0.1] * 384,
         limit=20,
         alpha=0.5,
+        source_ids=None,
     )
     reranker.rerank.assert_called_once()
 
 
 def test_pipeline_skips_reranking_when_disabled(dependencies):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
 
     pipeline = RetrievalPipeline(
         embedder=embedder,
         store=store,
+        version_filter=version_filter,
         reranker=None,
         rerank_enabled=False,
         candidate_limit=20,
@@ -90,12 +96,13 @@ def test_pipeline_skips_reranking_when_disabled(dependencies):
 
 
 def test_pipeline_returns_empty_chunks_when_no_candidates(dependencies):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
     store.search_hybrid.return_value = []
 
     pipeline = RetrievalPipeline(
         embedder=embedder,
         store=store,
+        version_filter=version_filter,
         reranker=reranker,
         rerank_enabled=True,
     )
@@ -109,11 +116,12 @@ def test_pipeline_returns_empty_chunks_when_no_candidates(dependencies):
 
 @pytest.mark.parametrize("query", ["", "   ", None, 123])
 def test_pipeline_rejects_invalid_query(dependencies, query):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
 
     pipeline = RetrievalPipeline(
         embedder=embedder,
         store=store,
+        version_filter=version_filter,
         reranker=reranker,
     )
 
@@ -138,11 +146,12 @@ def test_pipeline_rejects_invalid_query(dependencies, query):
 def test_pipeline_rejects_invalid_configuration(
     dependencies, setting, value
 ):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
 
     kwargs = {
         "embedder": embedder,
         "store": store,
+        "version_filter": version_filter,
         "reranker": reranker,
     }
     kwargs[setting] = value
@@ -154,12 +163,13 @@ def test_pipeline_rejects_invalid_configuration(
 def test_pipeline_rejects_final_limit_greater_than_candidate_limit(
     dependencies,
 ):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
 
     with pytest.raises(ValueError, match="final_limit"):
         RetrievalPipeline(
             embedder=embedder,
             store=store,
+            version_filter=version_filter,
             reranker=reranker,
             candidate_limit=2,
             final_limit=3,
@@ -167,24 +177,26 @@ def test_pipeline_rejects_final_limit_greater_than_candidate_limit(
 
 
 def test_pipeline_requires_reranker_when_enabled(dependencies):
-    embedder, store, _ = dependencies
+    embedder, store,_, version_filter = dependencies
 
     with pytest.raises(ValueError, match="reranker"):
         RetrievalPipeline(
             embedder=embedder,
             store=store,
+            version_filter=version_filter,
             rerank_enabled=True,
         )
 
 
 def test_pipeline_rejects_unexpected_embedding_count(dependencies):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
     embedder.embed_texts.return_value = []
 
     pipeline = RetrievalPipeline(
         embedder=embedder,
         store=store,
         reranker=reranker,
+        version_filter=version_filter,
     )
 
     with pytest.raises(RuntimeError, match="embedding"):
@@ -194,13 +206,14 @@ def test_pipeline_rejects_unexpected_embedding_count(dependencies):
 
 
 def test_pipeline_reports_stage_timings(dependencies):
-    embedder, store, reranker = dependencies
+    embedder, store, reranker, version_filter = dependencies
 
     pipeline = RetrievalPipeline(
         embedder=embedder,
         store=store,
         reranker=reranker,
         rerank_enabled=True,
+        version_filter=version_filter,
     )
 
     result = pipeline.retrieve("Find installation instructions")
@@ -209,6 +222,7 @@ def test_pipeline_reports_stage_timings(dependencies):
     assert set(timings) == {
         "embedding",
         "retrieval",
+        "version_filter",
         "reranking",
         "retrieval_pipeline",
     }
@@ -218,6 +232,7 @@ def test_pipeline_reports_stage_timings(dependencies):
     expected_total = (
         timings["embedding"]
         + timings["retrieval"]
+        + timings["version_filter"]
         + timings["reranking"]
     )
     assert timings["retrieval_pipeline"] == pytest.approx(

@@ -5,6 +5,14 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: docupilot-api
+    env_file:
+      - .env
+
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy  
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -45,7 +53,41 @@ services:
       QUERY_DEFAULTS_LIMIT: "25"
     volumes:
       - weaviate_data:/var/lib/weaviate
+  redis:
+    image: redis:7.4-alpine
+    container_name: docupilot-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped    
+  
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docupilot-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: docupilot
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - rq worker --url "$$REDIS_URL" docupilot
+    restart: unless-stopped
 
 volumes:
   mongodb_data:
   weaviate_data:
+  redis_data:

@@ -42,6 +42,7 @@ class DocsSpider(scrapy.Spider):
         start_url: str | None = None,
         max_pages: str = "10",
         max_depth: str = "1",
+        crawl_id: str | None = None,
         *args,
         **kwargs,
     ):
@@ -61,7 +62,7 @@ class DocsSpider(scrapy.Spider):
         )
 
         self.root_url = root_url
-        self.crawl_id = uuid.uuid4().hex
+        self.crawl_id = crawl_id or uuid.uuid4().hex
 
     async def start(self):
         """Admit and schedule the root URL."""

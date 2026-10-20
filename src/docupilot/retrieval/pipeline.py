@@ -7,6 +7,8 @@ from typing import Any
 from docupilot.indexing.embedder import Embedder
 from docupilot.indexing.weaviate_store import WeaviateStore
 from docupilot.retrieval.reranker import Reranker
+from docupilot.retrieval.version_filter import CurrentVersionFilter
+from collections.abc import Sequence
 
 
 class RetrievalPipeline:
@@ -16,6 +18,7 @@ class RetrievalPipeline:
         self,
         embedder: Embedder,
         store: WeaviateStore,
+        version_filter: CurrentVersionFilter,
         reranker: Reranker | None = None,
         rerank_enabled: bool = True,
         candidate_limit: int = 20,
@@ -41,13 +44,18 @@ class RetrievalPipeline:
 
         self.embedder = embedder
         self.store = store
+        self.version_filter = version_filter
         self.reranker = reranker
         self.rerank_enabled = rerank_enabled
         self.candidate_limit = candidate_limit
         self.final_limit = final_limit
         self.alpha = alpha
 
-    def retrieve(self, query: str) -> dict[str, Any]:
+    def retrieve(
+        self,
+        query: str,
+        source_ids: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
         """Retrieve relevant chunks and report query-stage timings."""
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query must be a non-empty string")
@@ -69,36 +77,49 @@ class RetrievalPipeline:
             query_vector=vectors[0],
             limit=self.candidate_limit,
             alpha=self.alpha,
+            source_ids=source_ids,
         )
         retrieval_ms = (time.perf_counter() - start) * 1000
+        version_filter_start = time.perf_counter()
+
+        current_candidates = self.version_filter.filter_current(
+            candidates
+        )
+
+        version_filter_ms = (
+            time.perf_counter() - version_filter_start
+        ) * 1000
 
         # Stage 3: Optionally rerank candidates.
         reranking_ms = 0.0
 
-        if self.rerank_enabled and candidates:
+        if self.rerank_enabled and current_candidates:
             assert self.reranker is not None
 
             start = time.perf_counter()
             chunks = self.reranker.rerank(
                 query=query,
-                candidates=candidates,
+                candidates=current_candidates,
                 top_k=self.final_limit,
             )
             reranking_ms = (time.perf_counter() - start) * 1000
         else:
-            chunks = candidates[: self.final_limit]
+            chunks = current_candidates[: self.final_limit]
 
         return {
             "query": query,
             "chunks": chunks,
             "candidate_count": len(candidates),
+            "current_candidate_count": len(current_candidates),
+            "stale_candidate_count": (len(candidates) - len(current_candidates)),
             "reranking_enabled": self.rerank_enabled,
             "timings_ms": {
                 "embedding": round(embedding_ms, 3),
                 "retrieval": round(retrieval_ms, 3),
+                "version_filter": round(version_filter_ms, 3),
                 "reranking": round(reranking_ms, 3),
                 "retrieval_pipeline": round(
-                    embedding_ms + retrieval_ms + reranking_ms,
+                    embedding_ms + retrieval_ms + version_filter_ms + reranking_ms,
                     3,
                 ),
             },
