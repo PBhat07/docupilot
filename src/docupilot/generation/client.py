@@ -205,7 +205,7 @@ class LLMClient:
 
             if status_code == 429:
                 raise LLMRateLimitError(
-                    "The LLM provider rate limit was reached."
+                    "The LLM provider rate limit was reached(HTTP 429)."
                 ) from exc
 
             if status_code in (401, 403):

@@ -156,9 +156,14 @@ class AnswerService:
                 "cite each important factual claim using exact labels such as [S1]."
             )},
         ]
+        model_name = getattr(
+            getattr(self.llm_client, "config", None),
+            "model",
+            type(self.llm_client).__name__,
+        )
         logger.info(
             "Generating answer: model=%s history_turns=%d evidence_chunks=%d evidence_chars=%d",
-            self.llm_client.config.model, len(history), len(evidence),
+            model_name, len(history), len(evidence),
             sum(len(e["text"]) for e in evidence),
         )
         start = time.perf_counter()

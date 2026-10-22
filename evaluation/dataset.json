@@ -1,0 +1,70 @@
+[
+  {
+    "id": "Q001",
+    "category": "basic_api",
+    "question": "How do I define command-line arguments and parse them using Python argparse?",
+    "reference": "Create an ArgumentParser, define arguments using add_argument(), and call parse_args() to parse the command-line arguments. The parsed values are returned in a Namespace object.",
+    "source_ids": null,
+    "expected_evidence": [
+      "ArgumentParser is used to create a command-line argument parser",
+      "add_argument() defines arguments accepted by the parser",
+      "parse_args() parses the command-line arguments",
+      "Parsed values are available through the returned Namespace object"
+    ],
+    "answerable": true,
+    "evaluation_focus": "basic retrieval and factual correctness"
+  },
+  {
+    "id": "Q002",
+    "category": "multi_concept_reasoning",
+    "question": "In argparse, what is the difference between positional and optional arguments, and how are they defined?",
+    "reference": "Positional arguments are associated with their position in the command line and are typically defined using a name such as add_argument(\"filename\"). Optional arguments are identified by option strings such as -v or --verbose and can be defined using add_argument(\"--verbose\"). Optional arguments are not required by default unless configured otherwise.",
+    "source_ids": null,
+    "expected_evidence": [
+      "Positional arguments are identified by their position",
+      "Optional arguments use option strings, commonly beginning with a dash",
+      "Both types of arguments are defined with add_argument()",
+      "Optional arguments are not required by default"
+    ],
+    "answerable": true,
+    "evaluation_focus": "retrieval coverage and combining related documentation"
+  },
+  {
+    "id": "Q003",
+    "category": "similar_api_terms",
+    "question": "What is the difference between add_argument() and parse_args() in Python argparse?",
+    "reference": "add_argument() configures the parser by defining an argument it should accept. parse_args() parses the supplied command-line arguments and returns the parsed values, normally in a Namespace object.",
+    "source_ids": null,
+    "expected_evidence": [
+      "add_argument() defines an argument accepted by the parser",
+      "parse_args() parses command-line arguments",
+      "parse_args() returns the parsed argument values"
+    ],
+    "answerable": true,
+    "evaluation_focus": "distinguishing related API methods and ranking relevant chunks"
+  },
+  {
+    "id": "Q004",
+    "category": "unsupported_question",
+    "question": "What is the exact maximum number of command-line arguments argparse can parse before it raises an error?",
+    "reference": "The documentation does not specify a universal exact maximum number of command-line arguments that argparse can parse. The answer should not invent a numeric limit.",
+    "source_ids": null,
+    "expected_evidence": [],
+    "answerable": false,
+    "evaluation_focus": "evidence insufficiency and correct abstention"
+  },
+  {
+    "id": "Q005",
+    "category": "partial_answer",
+    "question": "How do I define a positional input and an optional --verbose flag, and what default log file path does argparse write to?",
+    "reference": "A positional input can be defined with add_argument(\"input\"), and an optional flag can be defined with add_argument(\"--verbose\", action=\"store_true\"). The argparse documentation does not establish a default log file path; argparse argument parsing does not by itself configure a logging destination.",
+    "source_ids": null,
+    "expected_evidence": [
+      "A positional argument can be defined using add_argument() with its name",
+      "An optional --verbose flag can be defined using add_argument()",
+      "The response should not invent a default log file path"
+    ],
+    "answerable": true,
+    "evaluation_focus": "partial answers, uncertainty handling, and citation support"
+  }
+]
