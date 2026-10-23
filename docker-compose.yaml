@@ -87,7 +87,42 @@ services:
       - rq worker --url "$$REDIS_URL" docupilot
     restart: unless-stopped
 
+  
+  evaluation:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_EXTRAS: "dev,eval"
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: docupilot
+      WEAVIATE_HOST: weaviate
+      WEAVIATE_PORT: "8080"
+      WEAVIATE_GRPC_PORT: "50051"
+      EVAL_DATASET_PATH: /app/evaluation/dataset.json
+      EVAL_OUTPUT_DIR: /app/data/evaluation/results
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      weaviate:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./evaluation:/app/evaluation
+      - ./data:/app/data
+    command: ["python", "-m", "evaluation.runner"]
+    profiles:
+      - evaluation
+  
+
 volumes:
   mongodb_data:
   weaviate_data:
   redis_data:
+  

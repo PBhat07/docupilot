@@ -85,21 +85,28 @@ def test_answer_abstains_when_no_evidence():
 
 
 @pytest.mark.parametrize(
-    "response",
+    ("response", "expected_reason"),
     [
-        "The API uses port 8000.",
-        "The API uses port 8000. [S9]",
+        ("The API uses port 8000.", "missing_citations"),
+        (
+            "The API uses port 8000. [S9]",
+            "citation_validation_failed",
+        ),
     ],
 )
-def test_answer_abstains_when_citations_are_invalid(response):
+def test_answer_abstains_when_citations_are_invalid(
+    response, expected_reason
+):
     retrieval = FakeRetrieval([make_chunk()])
     llm = FakeLLM(response)
     service = AnswerService(retrieval, llm)
 
-    result = asyncio.run(service.answer("Which port does the API use?"))
+    result = asyncio.run(
+        service.answer("Which port does the API use?")
+    )
 
     assert result["abstained"] is True
-    assert result["abstention_reason"] == "citations_not_verifiable"
+    assert result["abstention_reason"] == expected_reason
     assert result["citations"] == []
 
 

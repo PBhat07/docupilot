@@ -10,8 +10,11 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 COPY tests/ ./tests/
 COPY scripts/ ./scripts/
+COPY evaluation/ ./evaluation/
 
-RUN pip install --no-cache-dir --default-timeout=300 --retries=5 -e ".[dev]"
+ARG INSTALL_EXTRAS=dev
+
+RUN pip install --no-cache-dir --default-timeout=300 --retries=5 -e ".[${INSTALL_EXTRAS}]"
 
 EXPOSE 8000
 
