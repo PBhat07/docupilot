@@ -27,7 +27,7 @@ The UI has two workspaces:
 ### Frontend demo
 
 <!-- TODO: Add docs/assets/docupilot-demo.gif after capturing the real application. -->
-<!-- ![DocuPilot UI demo](docs/assets/docupilot-demo.gif) -->
+![DocuPilot UI demo](docs/assets/docupilot-demo.gif)
 
 **GIF placeholder:** `docs/assets/docupilot-demo.gif`
 
@@ -36,19 +36,36 @@ The UI has two workspaces:
 
 ### Screenshots and CLI output
 
-Capture screenshots from a real run and save them at the paths below. These image references are intentionally commented out until the files are added.
 
 - `docs/assets/screenshots/knowledge-base.png` — source list and indexing status.
-- `docs/assets/screenshots/documentation-assistant.png` — question, answer, and citation panel.
+- docs/assets/screenshots/documentation-assistant.png` — question, answer, and citation panel.
 - `docs/assets/screenshots/cli-ingestion.png` — CLI source registration or job status.
 - `docs/assets/screenshots/cli-answer.png` — CLI answer and citation URLs.
 
-<!-- ![Knowledge Base](docs/assets/screenshots/knowledge-base.png) -->
-<!-- ![Documentation Assistant](docs/assets/screenshots/documentation-assistant.png) -->
-<!-- ![CLI ingestion output](docs/assets/screenshots/cli-ingestion.png) -->
-<!-- ![CLI answer output](docs/assets/screenshots/cli-answer.png) -->
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>Knowledge Base</strong><br>
+      <img src="docs/assets/screenshots/knowledge-base.png" alt="DocuPilot Knowledge Base" width="100%">
+    </td>
+    <td align="center" width="50%">
+      <strong>Documentation Assistant</strong><br>
+      <img src="docs/assets/screenshots/documentation-assistant.png" alt="DocuPilot Documentation Assistant" width="100%">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>CLI Ingestion</strong><br>
+      <img src="docs/assets/screenshots/cli-ingestion.png" alt="DocuPilot CLI ingestion output" width="100%">
+    </td>
+    <td align="center" width="50%">
+      <strong>CLI Answer</strong><br>
+      <img src="docs/assets/screenshots/cli-answer.png" alt="DocuPilot CLI answer and citations" width="100%">
+    </td>
+  </tr>
+</table>
 
-Do not use fabricated results or include API keys, private documentation, or other sensitive data in screenshots or recordings.
+
 
 ## Architecture at a glance
 
